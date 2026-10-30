@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import PerfPanel from '@/components/PerfPanel';
 import Scene from '@/components/Scene';
 import type { PartStatus } from '@/components/PCScene';
 import { load, save } from '@/components/prefs';
@@ -10,6 +11,7 @@ import type { SceneKey } from '@/lib/assembly';
 import { Build, CATEGORY_LABEL, CATEGORY_ORDER, Category, PARTS_BY_CAT, estimateWatts, getPart, resolve } from '@/lib/catalog';
 import { checkBuild } from '@/lib/compat';
 import { WHAT_IT_DOES, gamingVerdict } from '@/lib/explain';
+import { gameFps, type Res } from '@/lib/perf';
 import { scores } from '@/lib/recommend';
 import { DEMO_BUILD, buildHref, decodeBuild, decodeOwned } from '@/lib/share';
 
@@ -23,6 +25,12 @@ export default function BuildPage() {
   const [owned, setOwned] = useState<Set<Category>>(() => decodeOwned(qs.get('own')));
   const [sel, setSel] = useState<Category | null>(null);
   const [copied, setCopied] = useState(false);
+  const [before, setBefore] = useState<Build | null>(null);
+  const [res, setRes] = useState<Res>('1440');
+  // Every swap remembers the previous build for a while so the FPS panel can show what changed.
+  const change = (next: Build) => { setBefore(build); setBuild(next); };
+  useEffect(() => { if (!before) return; const t = setTimeout(() => setBefore(null), 12000); return () => clearTimeout(t); }, [before]);
+  const avgFps = (b: Build) => { const g = gameFps(b, res); return g.reduce((t, x) => t + x.fps, 0) / g.length; };
   const [extras, setExtras] = useState<Extras>({ monitor: '1080', peripherals: true, windows: true, wifiAdapter: false, taxPct: 7 });
 
   useEffect(() => { setExtras((e) => load('fr:extras', e)); }, []);
@@ -82,7 +90,7 @@ export default function BuildPage() {
                   <div className="small muted">{i.detail}</div>
                   {i.fix && (
                     <button className="btn" style={{ marginTop: 8, padding: '6px 10px', fontSize: 13 }}
-                      onClick={() => { setBuild({ ...build, [i.fix!.cat]: i.fix!.partId }); setSel(i.fix!.cat); }}>
+                      onClick={() => { change({ ...build, [i.fix!.cat]: i.fix!.partId }); setSel(i.fix!.cat); }}>
                       {i.fix.label}
                     </button>
                   )}
@@ -105,6 +113,8 @@ export default function BuildPage() {
             </div>
           </section>
 
+          <section className="card"><PerfPanel build={build} before={before} res={res} onRes={setRes} /></section>
+
           <section className="parts" aria-label="Parts">
             {CATEGORY_ORDER.map((c) => {
               const p = getPart(build[c]);
@@ -124,9 +134,13 @@ export default function BuildPage() {
                   {open && (
                     <>
                       <select value={build[c] ?? ''} aria-label={`Choose ${CATEGORY_LABEL[c]}`}
-                        onChange={(e) => setBuild({ ...build, [c]: e.target.value || undefined })}>
+                        onChange={(e) => change({ ...build, [c]: e.target.value || undefined })}>
                         {c === 'gpu' && <option value="">None (use built-in graphics)</option>}
-                        {PARTS_BY_CAT[c].map((o) => <option key={o.id} value={o.id}>{o.name} - ${o.price}</option>)}
+                        {PARTS_BY_CAT[c].map((o) => {
+                          // CPU and GPU swaps show their average FPS change right in the menu.
+                          const d = (c === 'gpu' || c === 'cpu') && o.id !== build[c] ? Math.round(avgFps({ ...build, [c]: o.id }) - avgFps(build)) : 0;
+                          return <option key={o.id} value={o.id}>{o.name} - ${o.price}{d ? ` (${d > 0 ? '+' : ''}${d} fps avg)` : ''}</option>;
+                        })}
                       </select>
                       <div className="explain">
                         {p && <div>{p.blurb}</div>}

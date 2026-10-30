@@ -103,7 +103,7 @@ export function Motherboard({ l, part }: { l: Layout; part: BoardPart }) {
   const brass = useStd({ color: '#c9a24a', metalness: 1, roughness: 0.3 });
   const sinkMat = useStd({ color: '#2b2f35', metalness: 0.85, roughness: 0.32, map: finStripes(7, '#24272c', '#4b5058') });
   const sinkLabel = useMemo(() => new THREE.MeshStandardMaterial({
-    map: labelTexture([{ t: 'M.2 SHIELD FROZR', size: 40, color: '#c7ccd3', weight: 800 }], { w: 512, h: 96 }), transparent: true, metalness: 0.5, roughness: 0.4,
+    map: labelTexture([{ t: 'M.2 SHIELD', size: 40, color: '#c7ccd3', weight: 800 }], { w: 512, h: 96 }), transparent: true, metalness: 0.5, roughness: 0.4,
   }), []);
   const padMat = useStd({ color: '#8d9399', roughness: 0.9 });
   const filmMat = useStd({ color: '#9fd3ff', roughness: 0.1, transparent: true, opacity: 0.55 });
@@ -307,7 +307,7 @@ export function CpuChip({ l, part }: { l: Layout; part: CpuPart }) {
     if (!pose.current) return;
     const v = rc.cpu;
     pose.current.visible = v > -0.5;
-    pose.current.position.x = v < 0.5 ? 9 + (1.0 - 9) * seg(v, 0, 0.5) : 1.0 * (1 - seg(v, 0.5, 1));
+    pose.current.position.x = v < 0.5 ? 6 + (1.0 - 6) * seg(v, 0, 0.5) : 1.0 * (1 - seg(v, 0.5, 1));
     if (spin.current) spin.current.rotation.x = rc.cpuSpin * Math.PI / 2;
     if (flip.current) flip.current.rotation.z = rc.cpuFlip * Math.PI * 0.85;
   });
@@ -366,7 +366,7 @@ export function RamSticks({ l, part }: { l: Layout; part: RamPart }) {
     if (!pose.current) return;
     const v = rc.ram;
     pose.current.visible = v > -0.5;
-    pose.current.position.x = v < 0.5 ? 9 + (1.4 - 9) * seg(v, 0, 0.5) : 1.4 * (1 - seg(v, 0.5, 1));
+    pose.current.position.x = v < 0.5 ? 6.5 + (1.4 - 6.5) * seg(v, 0, 0.5) : 1.4 * (1 - seg(v, 0.5, 1));
   });
   return (
     <group ref={pose}>

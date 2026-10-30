@@ -40,7 +40,7 @@ export function PcCase({ l, part, lowGfx, gpuSlots = 2 }: { l: Layout; part: Cas
   // Smoked tempered glass: a light dark tint plus clearcoat reflections, so the interior stays crisp.
   const glass = useMemo(() => new THREE.MeshPhysicalMaterial({
     color: '#0b0e12', transparent: true, opacity: 0.22, roughness: 0.03, metalness: 0,
-    clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 0.6, specularIntensity: 1, depthWrite: false, side: THREE.DoubleSide,
+    clearcoat: 0.6, clearcoatRoughness: 0.05, envMapIntensity: 0.22, specularIntensity: 1, depthWrite: false, side: THREE.DoubleSide,
   }), [lowGfx]);
   const frit = useStd({ color: '#050506', roughness: 0.3 });
 

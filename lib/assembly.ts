@@ -48,7 +48,7 @@ export const RIG_START: RigState = {
 
 // Named points the camera can fly to and callouts can pin to. Board anchors move with the board.
 export type Anchor =
-  | 'boardCenter' | 'socket' | 'lever' | 'plate' | 'cpuAbove' | 'cpuTri' | 'socketTri'
+  | 'boardCenter' | 'socket' | 'lever' | 'plate' | 'cpuAbove' | 'coolerBase' | 'cpuTri' | 'socketTri'
   | 'm2Slot' | 'm2Screw' | 'm2Sink' | 'm2Key' | 'ramA2' | 'ramB2' | 'ramLatch' | 'ramNotch' | 'ramSlots'
   | 'cs1' | 'cs2' | 'cs3' | 'cs4' | 'coolerTop' | 'cpuFan' | 'eps' | 'atx' | 'pcieSlot' | 'pcieLatch'
   | 'fpanel' | 'fpPwr' | 'fpRst' | 'fpHdd' | 'fpPled' | 'usb3' | 'audio' | 'sysFan' | 'cmos'
@@ -114,7 +114,7 @@ export function assemblySteps(r: Resolved): Step[] {
   const cpuActions: Action[] = am4 ? [
     { t: 'Push the socket lever slightly out from the socket, then lift it straight up.', why: 'AM4 levers swing up about 90 degrees. Go all the way or the CPU will not drop in.', rig: { lever: 1 }, focus: 'socket', zoom: 20, marks: [{ at: 'lever', text: 'Lever', arrow: [1, 0, 0] }], sounds: [[0.2, 'click']] },
     { t: 'Take the CPU out of its tray and hold it by the edges only.', why: 'On AM4 the 1,331 pins are on the CPU itself. One bent pin can stop it working.', rig: { cpu: 0, cpuFlip: 1 }, focus: 'cpuAbove', zoom: 18, marks: [{ at: 'cpuAbove', text: 'Pins on the CPU: never touch them', tone: 'warn' }], sounds: [[0, 'whoosh']] },
-    { t: 'Turn it so the small gold triangle on the corner matches the triangle printed on the socket.', why: 'This is the only orientation it fits. If it does not drop in, it is the wrong way around.', rig: { cpuFlip: 0, cpuSpin: 0 }, focus: 'socket', zoom: 20, marks: [{ at: 'cpuTri', text: 'Gold triangle' }, { at: 'socketTri', text: 'Socket triangle' }] },
+    { t: 'Turn it so the small gold triangle on the corner matches the triangle printed on the socket.', why: 'This is the only orientation it fits. If it does not drop in, it is the wrong way around.', rig: { cpuFlip: 0, cpuSpin: 0 }, focus: 'socket', zoom: 28, marks: [{ at: 'cpuTri', text: 'Gold triangle' }, { at: 'socketTri', text: 'Socket triangle' }] },
     { t: 'Lower it so it hovers just above the socket, perfectly flat.', rig: { cpu: 0.5 }, focus: 'socket', zoom: 18, marks: [{ at: 'socket', arrow: [-1, 0, 0] }] },
     { t: 'Let it drop in under its own weight. Do not press.', why: 'Zero force. If you need to push, stop and check the triangle.', rig: { cpu: 1 }, focus: 'socket', zoom: 18, sounds: [[0.45, 'click']] },
     { t: 'Lower the lever back down until it clicks under its hook.', rig: { lever: 0 }, focus: 'socket', zoom: 20, marks: [{ at: 'lever', arrow: [-1, 0, 0] }], sounds: [[0.5, 'snap']] },
@@ -124,7 +124,7 @@ export function assemblySteps(r: Resolved): Step[] {
     { t: 'Lift the metal load plate. Leave the plastic cover on it for now.', why: 'The cover protects the socket pins. It pops off by itself when you close the lever.', rig: { plate: 1 }, focus: 'socket', zoom: 22, marks: [{ at: 'plate', text: 'Load plate', arrow: [1, 0, 0] }], sounds: [[0.3, 'click']] },
     { t: 'Look into the socket, but do not touch it.', why: `The ${lga ? '1,700' : '1,718'} pins are inside the socket and bend at a touch. Bent socket pins are the most common way first-time builders kill a board.`, focus: 'socket', zoom: 14, marks: [{ at: 'socket', text: 'Pins live here: hands off', tone: 'warn' }] },
     { t: 'Pick up the CPU by its edges.', why: 'The underside is flat gold contact pads. Skin oil on them can cause bad contact.', rig: { cpu: 0, cpuFlip: 1 }, focus: 'cpuAbove', zoom: 20, marks: [{ at: 'cpuAbove', text: 'Gold pads: do not touch' }], sounds: [[0, 'whoosh']] },
-    { t: `Turn it so the gold triangle on the corner lines up with the triangle on the socket${lga ? ', and the two side notches line up with the socket keys' : ''}.`, why: 'It only fits one way. The keys stop it from sitting flat if it is rotated.', rig: { cpuFlip: 0, cpuSpin: 0 }, focus: 'socket', zoom: 20, marks: [{ at: 'cpuTri', text: 'Gold triangle' }, { at: 'socketTri', text: 'Socket triangle' }] },
+    { t: `Turn it so the gold triangle on the corner lines up with the triangle on the socket${lga ? ', and the two side notches line up with the socket keys' : ''}.`, why: 'It only fits one way. The keys stop it from sitting flat if it is rotated.', rig: { cpuFlip: 0, cpuSpin: 0 }, focus: 'socket', zoom: 28, marks: [{ at: 'cpuTri', text: 'Gold triangle' }, { at: 'socketTri', text: 'Socket triangle' }] },
     { t: 'Hold it flat, just above the socket.', rig: { cpu: 0.5 }, focus: 'socket', zoom: 18, marks: [{ at: 'socket', arrow: [-1, 0, 0] }] },
     { t: 'Lower it straight down and let go. No sliding, no pressing.', rig: { cpu: 1 }, focus: 'socket', zoom: 18, sounds: [[0.45, 'click']] },
     { t: 'Close the load plate over the CPU.', rig: { plate: 0 }, focus: 'socket', zoom: 22, marks: [{ at: 'plate', arrow: [-1, 0, 0] }], sounds: [[0.45, 'click']] },
@@ -155,7 +155,7 @@ export function assemblySteps(r: Resolved): Step[] {
     actions: [
       { t: 'Find slots A2 and B2: the 2nd and 4th slots counting from the CPU.', why: 'With two sticks these slots run in dual-channel at full speed. Your manual has the same diagram.', focus: 'ramSlots', zoom: 26, marks: [{ at: 'ramA2', text: 'A2', n: 1 }, { at: 'ramB2', text: 'B2', n: 2 }] },
       { t: 'Push the latches at the top end of those slots outward to open them.', rig: { ramLatch: 1 }, focus: 'ramLatch', zoom: 18, marks: [{ at: 'ramLatch', arrow: [0, 1, 0] }], sounds: [[0.1, 'click']] },
-      { t: 'Line up the notch in the gold edge with the key inside the slot.', why: `The notch is off-centre${ddr5 ? ' (DDR5 notch sits near the middle)' : ''}, so the stick only goes in one way round.`, rig: { ram: 0 }, focus: 'ramNotch', zoom: 18, marks: [{ at: 'ramNotch', text: 'Notch to key' }], sounds: [[0, 'whoosh']] },
+      { t: 'Line up the notch in the gold edge with the key inside the slot.', why: `The notch is off-centre${ddr5 ? ' (DDR5 notch sits near the middle)' : ''}, so the stick only goes in one way round.`, rig: { ram: 0 }, focus: 'ramSlots', zoom: 30, from: [0.9, 0.7, 0.5], marks: [{ at: 'ramNotch', text: 'Notch to key' }], sounds: [[0, 'whoosh']] },
       { t: 'Set each stick straight into its slot.', rig: { ram: 0.5 }, focus: 'ramSlots', zoom: 22, marks: [{ at: 'ramA2', arrow: [-1, 0, 0] }, { at: 'ramB2', arrow: [-1, 0, 0] }] },
       { t: 'Press firmly on both ends until the latch snaps shut. It takes more force than you think.', why: 'You should hear a clear click. A half-seated stick is the #1 reason a new PC shows no picture.', rig: { ram: 1, ramLatch: 0 }, focus: 'ramSlots', zoom: 22, marks: [{ at: 'ramLatch', text: 'Click!', tone: 'ok' }], sounds: [[0.45, 'snap'], [0.6, 'snap']] },
     ],
@@ -164,7 +164,7 @@ export function assemblySteps(r: Resolved): Step[] {
   });
 
   const coolerActions: Action[] = cooler?.kind === 'stock' ? [
-    { t: 'Do not wipe the grey paste on the bottom of the stock cooler.', why: 'It comes pre-applied in exactly the right amount.', rig: { cooler: 0, coolerFilm: 0 }, focus: 'cpuAbove', zoom: 26, marks: [{ at: 'cpuAbove', text: 'Pre-applied paste' }], sounds: [[0, 'whoosh']] },
+    { t: 'Do not wipe the grey paste on the bottom of the stock cooler.', why: 'It comes pre-applied in exactly the right amount.', rig: { cooler: 0, coolerFilm: 0 }, focus: 'cpuAbove', zoom: 34, marks: [{ at: 'cpuAbove', text: 'Pre-applied paste' }], sounds: [[0, 'whoosh']] },
     { t: 'Line the four screws up with the holes around the socket and set the cooler down flat.', rig: { cooler: 1 }, focus: 'socket', zoom: 28, sounds: [[0.5, 'thunk']] },
     { t: 'Tighten the screws in an X pattern: a few turns each, then go round again.', why: 'Even pressure spreads the paste evenly. Cranking one corner down first can leave a gap.', rig: { coolerScrew: 1 }, focus: 'socket', zoom: 28, marks: [{ at: 'cs1', n: 1 }, { at: 'cs2', n: 2 }, { at: 'cs3', n: 3 }, { at: 'cs4', n: 4 }], sounds: [[0.1, 'screw'], [0.6, 'screw'], [1.1, 'screw'], [1.6, 'screw']], hold: 4 },
     { t: 'Plug the cooler fan into the CPU_FAN header.', why: 'Many boards refuse to boot without a fan signal on CPU_FAN.', focus: 'cpuFan', zoom: 16, marks: [{ at: 'cpuFan', text: 'CPU_FAN' }], sounds: [[0, 'plug']] },
@@ -175,10 +175,10 @@ export function assemblySteps(r: Resolved): Step[] {
   ] : [
     { t: `Fit the ${am4 || sock === 'AM5' ? 'AMD' : 'Intel'} mounting bracket from the cooler box.`, why: `${am4 || sock === 'AM5' ? 'On AMD you remove the plastic clips and reuse the stock backplate.' : 'On Intel a backplate goes behind the board first.'} The cooler manual shows each socket separately.`, rig: { bracket: 1 }, focus: 'socket', zoom: 26, sounds: [[0.2, 'screw'], [0.7, 'screw']] },
     { t: 'Put a pea-sized dot of thermal paste in the centre of the CPU.', why: 'Mounting pressure spreads it. More is not better.', rig: { paste: 1 }, focus: 'socket', zoom: 14, marks: [{ at: 'socket', text: 'Pea-sized dot' }] },
-    { t: 'Turn the cooler over: there is a clear plastic film on the base.', rig: { cooler: 0 }, focus: 'cpuAbove', zoom: 30, marks: [{ at: 'cpuAbove', text: 'Protective film!', tone: 'warn' }], sounds: [[0, 'whoosh']] },
-    { t: 'Peel the film off completely.', why: 'Forgetting it is the classic overheating mistake. Your CPU would hit 95 C and throttle.', rig: { coolerFilm: 0 }, focus: 'cpuAbove', zoom: 30 },
-    { t: 'Lower the cooler straight down onto the CPU. Do not twist it once it touches.', rig: { cooler: 1 }, focus: 'socket', zoom: 34, marks: [{ at: 'socket', arrow: [-1, 0, 0] }], sounds: [[0.5, 'thunk']] },
-    { t: 'Tighten the two spring screws a few turns at a time, alternating sides, until they stop.', rig: { coolerScrew: 1 }, focus: 'coolerTop', zoom: 34, marks: [{ at: 'cs1', n: 1 }, { at: 'cs2', n: 2 }], sounds: [[0.1, 'screw'], [0.7, 'screw'], [1.3, 'screw']], hold: 3.5 },
+    { t: 'Turn the cooler over: there is a clear plastic film on the base.', rig: { cooler: 0 }, focus: 'coolerBase', zoom: 42, from: [1, 0.15, 0.35], marks: [{ at: 'coolerBase', text: 'Protective film!', tone: 'warn' }], sounds: [[0, 'whoosh']] },
+    { t: 'Peel the film off completely.', why: 'Forgetting it is the classic overheating mistake. Your CPU would hit 95 C and throttle.', rig: { coolerFilm: 0 }, focus: 'coolerBase', zoom: 42, from: [1, 0.15, 0.35] },
+    { t: 'Lower the cooler straight down onto the CPU. Do not twist it once it touches.', rig: { cooler: 1 }, focus: 'socket', zoom: 52, marks: [{ at: 'socket', arrow: [-1, 0, 0] }], sounds: [[0.5, 'thunk']] },
+    { t: 'Tighten the two spring screws a few turns at a time, alternating sides, until they stop.', rig: { coolerScrew: 1 }, focus: 'socket', zoom: 50, from: [0.8, 0.6, 0.5], marks: [{ at: 'cs1', n: 1 }, { at: 'cs2', n: 2 }], sounds: [[0.1, 'screw'], [0.7, 'screw'], [1.3, 'screw']], hold: 3.5 },
     { t: 'Plug the fan into CPU_FAN. Fan arrow should point toward the back of the case.', why: 'Air goes front to back. The arrow on the fan frame shows the airflow.', focus: 'cpuFan', zoom: 18, marks: [{ at: 'cpuFan', text: 'CPU_FAN' }], sounds: [[0, 'plug']] },
   ];
   steps.push({

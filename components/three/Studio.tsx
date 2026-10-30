@@ -23,19 +23,20 @@ export function Studio({ center, quality }: { center: [number, number, number]; 
   const high = quality === 'high';
   return (
     <>
-      <color attach="background" args={['#0a0d12']} />
-      <fog attach="fog" args={['#0a0d12', 160, 420]} />
-      <hemisphereLight args={['#bcd4ff', '#0b0d10', 0.35]} />
+      <color attach="background" args={['#e6e2f6']} />
+      <fog attach="fog" args={['#e6e2f6', 180, 460]} />
+      <hemisphereLight args={['#ffffff', '#b9b2dc', 0.9]} />
       <directionalLight
         position={[60, 95, 70]} intensity={2.2} color="#fff4e6" castShadow={high}
         shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-normalBias={0.04}
-        shadow-camera-left={-60} shadow-camera-right={60} shadow-camera-top={70} shadow-camera-bottom={-20} shadow-camera-near={10} shadow-camera-far={260}
+        shadow-camera-left={-70} shadow-camera-right={110} shadow-camera-top={70} shadow-camera-bottom={-20} shadow-camera-near={10} shadow-camera-far={260}
       />
-      <spotLight ref={rim} position={[-50, 70, -60]} angle={0.5} penumbra={0.9} intensity={900} color="#5aa8ff" distance={0} decay={1.6} />
+      <spotLight ref={rim} position={[-50, 70, -60]} angle={0.5} penumbra={0.9} intensity={900} color="#8f6bff" distance={0} decay={1.6} />
+      <spotLight position={[70, 30, -50]} angle={0.6} penumbra={1} intensity={500} color="#ff7a5c" distance={0} decay={1.6} />
       <pointLight ref={inner} position={[center[0] + 2, center[1] + 6, center[2] + 4]} intensity={60} distance={70} decay={1.6} color="#d8e8ff" />
 
       <Environment resolution={high ? 256 : 64} frames={1}>
-        <color attach="background" args={['#06080b']} />
+        <color attach="background" args={['#d9d4ef']} />
         <Lightformer form="rect" intensity={3.2} color="#ffffff" position={[0, 60, 0]} rotation-x={Math.PI / 2} scale={[80, 40, 1]} />
         <Lightformer form="rect" intensity={2.2} color="#e9f1ff" position={[70, 20, 20]} rotation-y={-Math.PI / 2} scale={[60, 14, 1]} />
         <Lightformer form="rect" intensity={1.4} color="#9cc4ff" position={[-70, 20, -10]} rotation-y={Math.PI / 2} scale={[60, 10, 1]} />
@@ -44,9 +45,9 @@ export function Studio({ center, quality }: { center: [number, number, number]; 
       </Environment>
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={floorMat}>
-        <circleGeometry args={[150, 96]} />
+        <circleGeometry args={[260, 96]} />
       </mesh>
-      <ContactShadows position={[0, 0.02, 0]} scale={140} blur={2.4} far={40} opacity={0.75} resolution={high ? 1024 : 256} frames={high ? Infinity : 1} />
+      <ContactShadows position={[0, 0.02, 0]} scale={220} blur={2.4} far={40} opacity={0.45} color="#2a1f66" resolution={high ? 1024 : 256} frames={high ? Infinity : 1} />
     </>
   );
 }
@@ -59,7 +60,7 @@ export function Post({ quality }: { quality: 'low' | 'high' }) {
       <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.2} intensity={0.9} radius={0.7} />
       <ToneMapping mode={ToneMappingMode.AGX} />
       <SMAA />
-      <Vignette eskil={false} offset={0.25} darkness={0.55} />
+      <Vignette eskil={false} offset={0.3} darkness={0.28} />
     </EffectComposer>
   );
 }

@@ -20,7 +20,7 @@ export default function Home() {
       <section className="hero">
         <div>
           <span className="chip info">For first-time builders</span>
-          <h1 style={{ marginTop: 14 }}>Build your first PC with confidence.</h1>
+          <h1 style={{ marginTop: 14 }}>Build your first PC <span className="grad-text">with confidence.</span></h1>
           <p className="lead">
             Tell us what you play or work on and what you can spend. We pick parts that fit together, show you the build in 3D,
             then guide your hands through assembly, cable by cable.

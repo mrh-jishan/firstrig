@@ -33,7 +33,7 @@ export function CpuCooler({ l, part }: { l: Layout; part: CoolerPart }) {
     if (pose.current) {
       const v = rc.cooler;
       pose.current.visible = v > -0.5;
-      pose.current.position.x = (1 - seg(v, 0, 1)) * 16;
+      pose.current.position.x = (1 - seg(v, 0, 1)) * 11;
     }
     if (film.current) {
       film.current.visible = rc.coolerFilm > 0.04;

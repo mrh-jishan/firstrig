@@ -265,9 +265,9 @@ export function floorTexture() {
     const W = 1024;
     const [c, g] = canvas(W, W);
     const grad = g.createRadialGradient(W / 2, W / 2, 0, W / 2, W / 2, W / 2);
-    grad.addColorStop(0, '#1a2029'); grad.addColorStop(1, '#0b0f14');
+    grad.addColorStop(0, '#f7f5ff'); grad.addColorStop(0.7, '#e8e3f8'); grad.addColorStop(1, '#e6e2f6');
     g.fillStyle = grad; g.fillRect(0, 0, W, W);
-    g.strokeStyle = 'rgba(120,150,190,0.08)';
+    g.strokeStyle = 'rgba(106,60,255,0.08)';
     g.lineWidth = 1;
     for (let i = 0; i <= W; i += 32) {
       g.beginPath(); g.moveTo(i, 0); g.lineTo(i, W); g.stroke();

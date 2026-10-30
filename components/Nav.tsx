@@ -16,7 +16,7 @@ export default function Nav() {
   );
   return (
     <nav className="nav" aria-label="Main">
-      <Link href="/" className="brand">First<span>Rig</span></Link>
+      <Link href="/" className="brand"><i aria-hidden />First<span>Rig</span></Link>
       <div className="links">
         {link('/wizard', 'Find my build')}
         {link('/build', 'Builder', true)}
