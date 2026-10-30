@@ -1,331 +1,331 @@
 'use client';
 
+import { CameraControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Edges, Html, OrbitControls } from '@react-three/drei';
-import { useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { Resolved } from '@/lib/catalog';
 import type { CableKey, SceneKey } from '@/lib/assembly';
+import { setMuted, sfx, startHum, stopHum } from '@/lib/sound';
+import { CpuChip, Motherboard, NvmeDrive, RamSticks } from './three/Board';
+import { Cables } from './three/Cables';
+import { BoardBox, PcCase } from './three/Case';
+import { CpuCooler } from './three/Cooler';
+import { EngineProvider, EngineTicker, Mount, createEngine, useEngine, type Engine, type PartStatus } from './three/engine';
+import { GraphicsCard } from './three/Gpu';
+import { layout, type Layout, type V3 } from './three/layout';
+import { PowerSupply } from './three/Psu';
+import { Post, Studio } from './three/Studio';
+import { usePrefs } from './prefs';
 
-// Units are centimetres. The viewer looks from the glass side (+x) toward the motherboard tray (-x).
-// Rear of the case is -z, front is +z.
-
-export type PartStatus = 'error' | 'warn' | 'focus';
+export type { PartStatus };
 
 export type SceneProps = {
   r: Resolved;
   installed?: SceneKey[]; // undefined = everything chosen
-  active?: SceneKey;
+  active?: SceneKey; // plays its keyframed install clip
   cables?: CableKey[];
-  activeCables?: CableKey[];
+  activeCables?: CableKey[]; // animate being routed
   status?: Partial<Record<SceneKey, PartStatus>>;
-  hideCase?: boolean;
+  hideCase?: boolean; // board is on its box on the bench, case not yet involved
   lowGfx?: boolean;
-  animKey?: string; // change to replay the install animation
+  animKey?: string; // change to replay animations
   onPick?: (k: SceneKey) => void;
   showLabels?: boolean;
 };
 
-const STATUS_COLOR: Record<PartStatus, string> = { error: '#ff3b3b', warn: '#ffb020', focus: '#3ba7ff' };
+const LABEL: Record<SceneKey, string> = {
+  case: 'Case', board: 'Motherboard', cpu: 'CPU', ram: 'RAM', storage: 'NVMe SSD', cooler: 'CPU cooler', gpu: 'Graphics card', psu: 'Power supply',
+};
 
-function layout(r: Resolved) {
-  const c = r.case;
-  const small = c?.size === 'small';
-  const D = (c?.maxGpuMm ?? 380) / 10 + 6;
-  const H = small ? 30 : 46;
-  const W = (c?.maxCoolerMm ?? 165) / 10 + 3;
-  const form = r.board?.form ?? 'ATX';
-  const bh = form === 'ATX' ? 30.5 : form === 'mATX' ? 24.4 : 17;
-  const bw = form === 'ITX' ? 17 : 24.4;
-  const x0 = -W / 2 + 2; // motherboard surface
-  const top = H - 3;
-  const rear = -D / 2 + 2;
-  const P = (du: number, dv: number, dx = 0): [number, number, number] => [x0 + dx, top - dv, rear + du];
-  const itx = form === 'ITX';
-  const socket = { du: itx ? 7 : 9, dv: itx ? 6 : 7 };
-  const pcieDv = itx ? 13 : 17;
-  return { D, H, W, bh, bw, x0, top, rear, P, socket, pcieDv, itx, small };
+type View = 'hero' | 'side' | 'front' | 'top' | 'back' | 'inside' | 'bench';
+const VIEWS: { v: View; label: string; key: string }[] = [
+  { v: 'hero', label: '3/4', key: '1' }, { v: 'side', label: 'Side', key: '2' }, { v: 'front', label: 'Front', key: '3' },
+  { v: 'top', label: 'Top', key: '4' }, { v: 'back', label: 'Back', key: '5' }, { v: 'inside', label: 'Inside', key: '6' },
+];
+
+function viewPose(v: View, l: Layout): [V3, V3] {
+  const { H, W, D } = l;
+  const c: V3 = [0, H * 0.48, 0];
+  const s = Math.max(H, D) / 47;
+  switch (v) {
+    case 'side': return [[92 * s, H * 0.55, 2], c];
+    case 'front': return [[6, H * 0.55, 95 * s], c];
+    case 'top': return [[W * 0.2, 112 * s, 4], [0, H * 0.4, 0]];
+    case 'back': return [[-34 * s, H * 0.7, -82 * s], c];
+    case 'inside': {
+      const sock: V3 = [l.x0 + 3, l.top - l.sock.dv, l.rear + l.sock.du];
+      return [[sock[0] + 30, sock[1] + 6, sock[2] + 20], sock];
+    }
+    case 'bench': return [[36, 44, 40], [1, 4, 2]];
+    default: return [[62 * s, H * 1.0, 66 * s], [0, H * 0.44, 0]];
+  }
 }
 
-type L = ReturnType<typeof layout>;
-
-function useInstallOffset(active: boolean, animKey: string | undefined, from: THREE.Vector3) {
+/** Eases the whole board assembly between "on its box on the bench" and "screwed into the case". */
+function BoardFrame({ l, bench, children }: { l: Layout; bench: boolean; children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null);
-  const start = useRef<{ key?: string; t: number }>({ t: -1 });
-  useFrame((state) => {
+  const init = useRef(false);
+  const target = useMemo(() => {
+    const q = new THREE.Quaternion();
+    if (bench) {
+      q.setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
+      return { p: new THREE.Vector3(-l.bh / 2, 6.05, -l.bw / 2), q };
+    }
+    return { p: new THREE.Vector3(...l.board), q };
+  }, [bench, l]);
+  useFrame((_, dt) => {
     const g = ref.current;
     if (!g) return;
-    if (!active) { g.position.set(0, 0, 0); return; }
-    if (start.current.key !== animKey || start.current.t < 0) start.current = { key: animKey, t: state.clock.elapsedTime };
-    const p = Math.min(1, (state.clock.elapsedTime - start.current.t) / 1.4);
-    const e = 1 - Math.pow(1 - p, 3);
-    g.position.copy(from).multiplyScalar(1 - e);
+    if (!init.current) { g.position.copy(target.p); g.quaternion.copy(target.q); init.current = true; return; }
+    const k = 1 - Math.exp(-dt * 3);
+    g.position.lerp(target.p, k);
+    g.quaternion.slerp(target.q, k);
   });
-  return ref;
+  return <group ref={ref}>{children}</group>;
 }
 
-function Mat({ color, status, active, metal = 0.3, opacity }: { color: string; status?: PartStatus; active?: boolean; metal?: number; opacity?: number }) {
-  const ref = useRef<THREE.MeshStandardMaterial>(null);
-  const glow = status ? STATUS_COLOR[status] : active ? STATUS_COLOR.focus : null;
-  useFrame((s) => {
-    if (ref.current && glow) ref.current.emissiveIntensity = 0.35 + Math.sin(s.clock.elapsedTime * 4) * 0.25;
-  });
-  return (
-    <meshStandardMaterial
-      ref={ref}
-      color={color}
-      metalness={metal}
-      roughness={0.55}
-      emissive={glow ?? '#000000'}
-      emissiveIntensity={glow ? 0.5 : 0}
-      transparent={opacity !== undefined}
-      opacity={opacity ?? 1}
-    />
-  );
-}
-
-function Box({ pos, size, color, status, active, metal, opacity, edges }: {
-  pos: [number, number, number]; size: [number, number, number]; color: string; status?: PartStatus; active?: boolean; metal?: number; opacity?: number; edges?: string;
-}) {
-  return (
-    <mesh position={pos} castShadow receiveShadow>
-      <boxGeometry args={size} />
-      <Mat color={color} status={status} active={active} metal={metal} opacity={opacity} />
-      {edges && <Edges color={edges} />}
-    </mesh>
-  );
-}
-
-function Label({ pos, text, show }: { pos: [number, number, number]; text: string; show?: boolean }) {
-  if (!show) return null;
-  return (
-    <Html position={pos} center distanceFactor={60} style={{ pointerEvents: 'none' }}>
-      <div className="scene-label">{text}</div>
-    </Html>
-  );
-}
-
-function CaseShell({ l, color, hide, status }: { l: L; color: string; hide?: boolean; status?: PartStatus }) {
-  const { D, H, W } = l;
-  const t = 0.6;
-  const op = hide ? 0.05 : undefined;
-  const edge = status ? STATUS_COLOR[status] : hide ? '#4b5563' : '#6b7280';
-  const fans = l.small ? [H / 2] : [H * 0.25, H * 0.5, H * 0.75];
-  return (
-    <group>
-      <Box pos={[-W / 2, H / 2, 0]} size={[t, H, D]} color={color} opacity={op} edges={edge} />
-      <Box pos={[0, t / 2, 0]} size={[W, t, D]} color={color} opacity={op} edges={edge} />
-      <Box pos={[0, H - t / 2, 0]} size={[W, t, D]} color={color} opacity={hide ? 0.05 : 0.6} edges={edge} />
-      <Box pos={[0, H / 2, -D / 2]} size={[W, H, t]} color={color} opacity={op} edges={edge} />
-      <Box pos={[0, H / 2, D / 2]} size={[W, H, t]} color={color} opacity={hide ? 0.05 : 0.35} edges={edge} />
-      {!hide && fans.map((y) => (
-        <mesh key={y} position={[0, y, D / 2 - 1.8]} rotation={[0, 0, 0]}>
-          <cylinderGeometry args={[5.6, 5.6, 2.4, 24]} />
-          <meshStandardMaterial color="#111827" roughness={0.8} transparent opacity={0.85} />
-        </mesh>
-      ))}
-      {!hide && (
-        <mesh position={[W / 2, H / 2, 0]}>
-          <boxGeometry args={[0.2, H, D]} />
-          <meshPhysicalMaterial color="#9fb6cc" transparent opacity={0.08} roughness={0.05} />
-        </mesh>
-      )}
-    </group>
-  );
-}
-
-function curve(points: [number, number, number][]) {
-  return new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
-}
-
-function Cable({ pts, color, radius, active }: { pts: [number, number, number][]; color: string; radius: number; active?: boolean }) {
-  const geo = useMemo(() => new THREE.TubeGeometry(curve(pts), 48, radius, 8, false), [pts, radius]);
-  const end = pts[pts.length - 1];
-  return (
-    <group>
-      <mesh geometry={geo}>
-        <Mat color={color} active={active} metal={0.1} />
-      </mesh>
-      {active && <Pulse pos={end} />}
-    </group>
-  );
-}
-
-function Pulse({ pos }: { pos: [number, number, number] }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((s) => {
-    const k = 1 + ((s.clock.elapsedTime * 1.5) % 1) * 1.6;
-    ref.current?.scale.setScalar(k);
-    const m = ref.current?.material as THREE.MeshBasicMaterial | undefined;
-    if (m) m.opacity = 1 - ((s.clock.elapsedTime * 1.5) % 1);
-  });
-  return (
-    <mesh ref={ref} position={pos}>
-      <sphereGeometry args={[1.1, 16, 16]} />
-      <meshBasicMaterial color={STATUS_COLOR.focus} transparent opacity={0.8} depthWrite={false} />
-    </mesh>
-  );
-}
-
-function Rig(p: SceneProps) {
+function Rig(p: SceneProps & { hovered: SceneKey | null; setHovered: (k: SceneKey | null) => void }) {
   const { r } = p;
   const l = useMemo(() => layout(r), [r]);
   const all: SceneKey[] = ['case', 'board', 'cpu', 'ram', 'storage', 'cooler', 'gpu', 'psu'];
   const shown = new Set<SceneKey>(p.installed ?? all);
   if (p.active) shown.add(p.active);
+  const bench = !!p.hideCase;
   const st = p.status ?? {};
-  const isA = (k: SceneKey) => p.active === k;
-  const lab = p.showLabels;
-
-  const off = (k: SceneKey) => new THREE.Vector3(k === 'board' ? 18 : 16, k === 'psu' ? 0 : 8, k === 'psu' ? 20 : 0);
-  const refs = {
-    board: useInstallOffset(isA('board'), p.animKey, off('board')),
-    cpu: useInstallOffset(isA('cpu'), p.animKey, off('cpu')),
-    ram: useInstallOffset(isA('ram'), p.animKey, off('ram')),
-    storage: useInstallOffset(isA('storage'), p.animKey, off('storage')),
-    cooler: useInstallOffset(isA('cooler'), p.animKey, off('cooler')),
-    gpu: useInstallOffset(isA('gpu'), p.animKey, off('gpu')),
-    psu: useInstallOffset(isA('psu'), p.animKey, off('psu')),
-  };
-
-  const pick = (k: SceneKey) => (e: { stopPropagation: () => void }) => { e.stopPropagation(); p.onPick?.(k); };
-
-  const { P, x0, top, rear, bh, bw, socket, pcieDv, D, H, W } = l;
-  const boardCenter = P(bw / 2, bh / 2, -0.15);
-  const sock = P(socket.du, socket.dv, 0);
-  const ramDu = socket.du + 6.5;
-  const ramSlots = l.itx ? [ramDu, ramDu + 1] : [ramDu, ramDu + 0.9, ramDu + 1.8, ramDu + 2.7];
-  const ramUsed = l.itx ? ramSlots : [ramSlots[1], ramSlots[3]];
-  const gpuLen = (r.gpu?.lengthMm ?? 250) / 10;
-  const gpuPos: [number, number, number] = [x0 + 6.6, top - pcieDv - 2.6, rear - 1 + gpuLen / 2];
-  const psuPos: [number, number, number] = [-W / 2 + 1 + 7.5, 4.9, -D / 2 + 1 + 7.2];
-  const coolerKind = r.cooler?.kind ?? 'air';
-  const coolerH = coolerKind === 'air' ? (r.cooler?.heightMm ?? 150) / 10 : coolerKind === 'stock' ? 6 : 4.5;
-  const dualTower = r.cooler?.id === 'pa120' || r.cooler?.id === 'nhd15g2';
-
-  const cablePts: Record<CableKey, [number, number, number][]> = {
-    atx24: [[psuPos[0] + 2, 9.4, psuPos[2] + 5], [x0 - 1.2, 12, rear + bw + 2.2], [x0 - 1.2, top - 10, rear + bw + 2.2], [x0 + 1.4, top - 10, rear + bw - 0.6]],
-    eps8: [[psuPos[0] - 3, 9.4, psuPos[2] - 4], [x0 - 1.2, 14, rear - 0.6], [x0 - 1.2, top + 1.6, rear + 2.5], [x0 + 1, top - 0.8, rear + 2.5]],
-    pcie: [[psuPos[0] + 4, 9.4, psuPos[2] + 3], [x0 + 9, gpuPos[1] - 6, rear + gpuLen * 0.6], [x0 + 12.6, gpuPos[1] + 0.5, rear + gpuLen * 0.62]],
-    front: [[x0 + 1, top - bh + 0.6, rear + bw - 3], [x0 + 3, 4, rear + bw + 3], [0, 2.5, D / 2 - 4]],
-    fans: [[0, H * 0.35, D / 2 - 3.5], [x0 + 3, top - bh - 0.5, rear + bw * 0.5], [x0 + 1, top - bh + 0.8, rear + bw * 0.5]],
-  };
+  const common = (k: SceneKey) => ({
+    name: k, active: p.active === k, animKey: p.animKey, status: st[k], hovered: p.hovered === k,
+    onPick: p.onPick, onHover: p.setHovered, showLabel: p.showLabels, label: LABEL[k],
+  });
+  const { P, sock, pcieDv, m2, ramUsed, bw, bh } = l;
+  const ramMid = (ramUsed[0] + ramUsed[ramUsed.length - 1]) / 2;
 
   return (
     <group>
-      {shown.has('case') && <group onClick={pick('case')}><CaseShell l={l} color={r.case?.color ?? '#2b2e33'} hide={p.hideCase} status={st.case} /></group>}
-      {p.hideCase && <Box pos={[x0 - 1.5, top - bh / 2 - 0.5, rear + bw / 2]} size={[1, bh + 2, bw + 3]} color="#c7a77a" opacity={0.6} />}
+      {bench && r.board && <BoardBox w={bh + 3} d={bw + 3} name={r.board.name} />}
 
-      {shown.has('board') && r.board && (
-        <group ref={refs.board} onClick={pick('board')}>
-          <Box pos={boardCenter} size={[0.3, bh, bw]} color="#1d3b2a" status={st.board} active={isA('board')} edges="#2f5a42" />
-          <Box pos={P(socket.du, socket.dv, 0.2)} size={[0.3, 5.6, 5.6]} color="#9ca3af" metal={0.8} />
-          {ramSlots.map((du) => <Box key={du} pos={P(du, socket.dv + 1, 0.3)} size={[0.6, 13.6, 0.55]} color="#111827" />)}
-          <Box pos={P(bw - 6, pcieDv, 0.4)} size={[0.8, 0.9, Math.min(9, bw - 4)]} color="#111827" />
-          <Box pos={P(2.5, 7, 1.6)} size={[3.2, 9, 3]} color="#374151" metal={0.6} />
-          <Label pos={P(bw / 2, bh - 2, 1)} text="Motherboard" show={lab} />
-        </group>
+      <BoardFrame l={l} bench={bench}>
+        {shown.has('board') && r.board && (
+          <Mount {...common('board')} pivot={P(bw / 2, bh / 2, 0)} labelAt={P(bw * 0.7, bh - 2, 1.5)}>
+            <Motherboard l={l} part={r.board} />
+          </Mount>
+        )}
+        {shown.has('cpu') && r.cpu && (
+          <Mount {...common('cpu')} pivot={P(sock.du, sock.dv, 0.6)} explode={[5, 0, 0]} labelAt={P(sock.du, sock.dv + 3.5, 2)}>
+            <CpuChip l={l} part={r.cpu} />
+          </Mount>
+        )}
+        {shown.has('storage') && r.storage && (
+          <Mount {...common('storage')} pivot={P(m2.du - 4, m2.dv, 0.45)} explode={[4, -2, 0]} labelAt={P(m2.du, m2.dv + 1.5, 1.5)}>
+            <NvmeDrive l={l} part={r.storage} />
+          </Mount>
+        )}
+        {shown.has('ram') && r.ram && (
+          <Mount {...common('ram')} pivot={P(ramMid, sock.dv + 1, 1)} explode={[11, 0, 2]} labelAt={P(ramMid, sock.dv - 6.5, 5)}>
+            <RamSticks l={l} part={r.ram} />
+          </Mount>
+        )}
+        {shown.has('cooler') && r.cooler && (
+          <Mount {...common('cooler')} pivot={P(sock.du, sock.dv, 3)} explode={[19, 3, 0]}
+            labelAt={P(sock.du, sock.dv - 8, r.cooler.kind === 'air' ? r.cooler.heightMm / 20 : 3)}>
+            <CpuCooler l={l} part={r.cooler} />
+          </Mount>
+        )}
+        {shown.has('gpu') && r.gpu && (
+          <Mount {...common('gpu')} pivot={P(l.gpuLen / 2, pcieDv + 2.5, 6)} explode={[22, -8, 0]} labelAt={P(l.gpuLen * 0.55, pcieDv + 3, 13)}>
+            <group position={P(-1.4, pcieDv, 0)}><GraphicsCard l={l} part={r.gpu} /></group>
+          </Mount>
+        )}
+      </BoardFrame>
+
+      {!bench && shown.has('case') && r.case && (
+        <Mount {...common('case')} glowScale={0.06} pivot={[0, l.H / 2, 0]} labelAt={[l.W / 2 + 1, l.H + 2, l.D / 2 - 4]}>
+          <PcCase l={l} part={r.case} lowGfx={p.lowGfx} />
+        </Mount>
       )}
-
-      {shown.has('cpu') && r.cpu && (
-        <group ref={refs.cpu} onClick={pick('cpu')}>
-          <Box pos={P(socket.du, socket.dv, 0.55)} size={[0.5, 4, 4]} color="#c0c4ca" metal={0.9} status={st.cpu} active={isA('cpu')} />
-        </group>
+      {!bench && shown.has('psu') && r.psu && (
+        <Mount {...common('psu')} pivot={l.psu} explode={[8, -1, 18]} labelAt={[l.psu[0] + 8.5, l.psu[1] + 2, l.psu[2]]}>
+          <group position={l.psu}><PowerSupply part={r.psu} /></group>
+        </Mount>
       )}
-
-      {shown.has('ram') && r.ram && (
-        <group ref={refs.ram} onClick={pick('ram')}>
-          {ramUsed.map((du) => <Box key={du} pos={P(du, socket.dv + 1, 2)} size={[3.2, 13.3, 0.7]} color="#1f2937" status={st.ram} active={isA('ram')} edges="#4b5563" />)}
-          <Label pos={P(ramUsed[0], socket.dv - 6.5, 3.5)} text="RAM" show={lab} />
-        </group>
-      )}
-
-      {shown.has('storage') && r.storage && (
-        <group ref={refs.storage} onClick={pick('storage')}>
-          <Box pos={P(socket.du + 1, l.itx ? 15 : 13.6, 0.35)} size={[0.3, 2.2, 8]} color="#0f172a" status={st.storage} active={isA('storage')} edges="#64748b" />
-        </group>
-      )}
-
-      {shown.has('cooler') && r.cooler && (
-        <group ref={refs.cooler} onClick={pick('cooler')}>
-          {coolerKind === 'stock' && (
-            <mesh position={P(socket.du, socket.dv, 0.8 + coolerH / 2)} rotation={[0, 0, Math.PI / 2]}>
-              <cylinderGeometry args={[4.8, 4.8, coolerH, 28]} />
-              <Mat color="#3f3f46" status={st.cooler} active={isA('cooler')} />
-            </mesh>
-          )}
-          {coolerKind === 'air' && (
-            <>
-              <Box pos={P(socket.du, socket.dv, 0.8 + coolerH / 2)} size={[coolerH, 12.5, dualTower ? 11 : 5.5]} color="#cbd5e1" metal={0.7} status={st.cooler} active={isA('cooler')} edges="#94a3b8" />
-              <Box pos={P(socket.du + (dualTower ? 0 : 3.4), socket.dv, 0.8 + coolerH / 2)} size={[coolerH - 1, 12, 2.4]} color={r.cooler.id === 'nhd15g2' ? '#5b4636' : '#111827'} status={st.cooler} active={isA('cooler')} />
-            </>
-          )}
-          {coolerKind === 'aio' && (
-            <>
-              <Box pos={P(socket.du, socket.dv, 0.8 + coolerH / 2)} size={[coolerH, 6.5, 6.5]} color="#18181b" status={st.cooler} active={isA('cooler')} edges="#52525b" />
-              <Box pos={[0.5, H - 3.2, rear + 4 + (r.cooler.radMm / 10) / 2]} size={[12, 3.8, r.cooler.radMm / 10]} color="#27272a" status={st.cooler} active={isA('cooler')} edges="#52525b" />
-              <Cable pts={[P(socket.du + 3, socket.dv - 2, 3), [x0 + 5, H - 6, rear + 12], [0, H - 4.5, rear + 14]]} color="#111" radius={0.55} />
-            </>
-          )}
-          <Label pos={P(socket.du, socket.dv - 7.5, coolerH / 2 + 1)} text="CPU cooler" show={lab} />
-        </group>
-      )}
-
-      {shown.has('gpu') && r.gpu && (
-        <group ref={refs.gpu} onClick={pick('gpu')}>
-          <Box pos={gpuPos} size={[12, 4.8, gpuLen]} color="#18181b" status={st.gpu} active={isA('gpu')} edges="#3f3f46" />
-          <Box pos={[gpuPos[0], gpuPos[1] + 2.5, gpuPos[2]]} size={[11.6, 0.2, gpuLen - 0.4]} color="#52525b" metal={0.8} />
-          <Box pos={[x0 + 6.6, gpuPos[1], rear - 1.3]} size={[12, 5.5, 0.2]} color="#9ca3af" metal={0.9} />
-          <Label pos={[gpuPos[0] + 6.5, gpuPos[1], gpuPos[2]]} text="Graphics card" show={lab} />
-        </group>
-      )}
-
-      {shown.has('psu') && r.psu && (
-        <group ref={refs.psu} onClick={pick('psu')}>
-          <Box pos={psuPos} size={[15, 8.6, 14]} color="#111827" status={st.psu} active={isA('psu')} edges="#374151" />
-          <Label pos={[psuPos[0] + 8, psuPos[1], psuPos[2]]} text="Power supply" show={lab} />
-        </group>
-      )}
-
-      {(['atx24', 'eps8', 'pcie', 'front', 'fans'] as CableKey[]).map((k) => {
-        const on = p.cables?.includes(k) || p.activeCables?.includes(k);
-        if (!on || (k === 'pcie' && !r.gpu)) return null;
-        const color = k === 'front' ? '#9ca3af' : k === 'fans' ? '#4b5563' : '#0b0b0c';
-        const radius = k === 'atx24' ? 0.9 : k === 'front' || k === 'fans' ? 0.3 : 0.55;
-        return <Cable key={k} pts={cablePts[k]} color={color} radius={radius} active={p.activeCables?.includes(k)} />;
-      })}
-
-      {st.gpu === 'error' && r.case && (
-        <mesh position={[gpuPos[0], gpuPos[1], rear - 1 + r.case.maxGpuMm / 10]}>
-          <boxGeometry args={[13, 8, 0.15]} />
-          <meshBasicMaterial color={STATUS_COLOR.error} transparent opacity={0.35} />
-        </mesh>
-      )}
+      {!bench && <Cables l={l} r={r} cables={p.cables ?? []} activeCables={p.activeCables ?? []} animKey={p.animKey} />}
     </group>
   );
 }
 
-export default function PCScene(props: SceneProps) {
-  const H = props.r.case?.size === 'small' ? 30 : 46;
-  const [ready, setReady] = useState(false);
+/** Camera choreography: smooth dolly between presets, auto-orbit, focus on picked parts. */
+function CameraRig({ l, view, focus, autoRotate, controls }: { l: Layout; view: { v: View; n: number }; focus: { k: SceneKey | null; n: number }; autoRotate: boolean; controls: React.RefObject<CameraControls | null> }) {
+  const engine = useEngine();
+  const first = useRef(true);
+  useEffect(() => {
+    const c = controls.current;
+    if (!c) return;
+    const [pos, tgt] = viewPose(view.v, l);
+    void c.setLookAt(...pos, ...tgt, !first.current);
+    if (!first.current && engine.sound) sfx.swoosh();
+    first.current = false;
+  }, [view, l, controls, engine]);
+  useEffect(() => {
+    const c = controls.current;
+    const obj = focus.k ? engine.objects.get(focus.k) : null;
+    if (!c || !obj) return;
+    const box = new THREE.Box3().setFromObject(obj);
+    if (box.isEmpty()) return;
+    void c.fitToBox(box, true, { paddingTop: 3, paddingBottom: 3, paddingLeft: 3, paddingRight: 3 });
+  }, [focus, controls, engine]);
+  useFrame((_, dt) => {
+    if (autoRotate && controls.current && !controls.current.active) controls.current.azimuthAngle += dt * 0.18;
+  });
   return (
-    <div className="scene-wrap">
+    <CameraControls ref={controls} makeDefault minDistance={14} maxDistance={220} maxPolarAngle={Math.PI * 0.49} smoothTime={0.45} draggingSmoothTime={0.12} dollySpeed={0.6} />
+  );
+}
+
+export default function PCScene(props: SceneProps) {
+  const prefs = usePrefs();
+  const engine = useMemo<Engine>(() => createEngine(), []);
+  const controls = useRef<CameraControls | null>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  const l = useMemo(() => layout(props.r), [props.r]);
+  const quality = props.lowGfx ? 'low' : 'high';
+  const [hovered, setHovered] = useState<SceneKey | null>(null);
+  const [view, setView] = useState<{ v: View; n: number }>({ v: props.hideCase ? 'bench' : 'hero', n: 0 });
+  const [focus, setFocus] = useState<{ k: SceneKey | null; n: number }>({ k: null, n: 0 });
+  const [explode, setExplode] = useState(false);
+  const [xray, setXray] = useState(false);
+  const [power, setPower] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  engine.sound = prefs.sound;
+  useEffect(() => { setMuted(!prefs.sound); }, [prefs.sound]);
+  useEffect(() => { engine.explodeTarget = explode ? 1 : 0; }, [engine, explode]);
+  useEffect(() => {
+    // During assembly the side panel is off, exactly like a real build.
+    engine.xrayTarget = xray || !!props.installed || props.status?.psu ? 1 : 0;
+  }, [engine, xray, props.installed, props.status?.psu]);
+  useEffect(() => { engine.cableViewTarget = props.activeCables?.some((c) => c === 'atx24' || c === 'eps8') ? 1 : 0; }, [engine, props.activeCables]);
+  // Jump between bench and case framing when the assembly moves the board.
+  useEffect(() => { setView((v) => ({ v: props.hideCase ? 'bench' : 'hero', n: v.n + 1 })); }, [props.hideCase]);
+  // Alert once when a new conflict appears.
+  const errCount = Object.values(props.status ?? {}).filter((s) => s === 'error').length;
+  const prevErr = useRef(errCount);
+  useEffect(() => { if (errCount > prevErr.current && engine.sound) sfx.error(); prevErr.current = errCount; }, [errCount, engine]);
+
+  const togglePower = () => {
+    const on = !power;
+    setPower(on);
+    if (on) {
+      if (engine.sound) sfx.rocker();
+      setTimeout(() => { engine.powerTarget = 1; if (engine.sound) startHum(); }, 280);
+      setTimeout(() => { if (engine.sound && engine.powerTarget === 1) sfx.post(); }, 2600);
+    } else {
+      engine.powerTarget = 0;
+      if (engine.sound) sfx.rocker();
+      stopHum();
+    }
+  };
+  useEffect(() => () => { stopHum(); }, []);
+
+  const pick = (k: SceneKey) => {
+    if (engine.sound) sfx.click();
+    setFocus((f) => ({ k, n: f.n + 1 }));
+    props.onPick?.(k);
+  };
+  const hover = (k: SceneKey | null) => {
+    setHovered(k);
+    if (k && engine.sound) sfx.tick();
+    if (wrap.current) wrap.current.style.cursor = k ? 'pointer' : '';
+  };
+  const tool = (fn: () => void) => () => { if (engine.sound) sfx.click(); fn(); };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const v = VIEWS.find((x) => x.key === e.key);
+      if (v) { setView((cur) => ({ v: v.v, n: cur.n + 1 })); return; }
+      const k = e.key.toLowerCase();
+      if (k === 'e') setExplode((x) => !x);
+      else if (k === 'x') setXray((x) => !x);
+      else if (k === 'p') togglePower();
+      else if (k === 'r') setAutoRotate((x) => !x);
+      else if (k === 'm') prefs.set({ sound: !prefs.sound });
+      else if (k === 'f' && focus.k) setFocus((f) => ({ k: f.k, n: f.n + 1 }));
+      else if (k === '?') setHelp((x) => !x);
+      else return;
+      if (engine.sound) sfx.click();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const fullscreen = () => {
+    const el = wrap.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen(); else void el.requestFullscreen?.();
+  };
+
+  const center: V3 = [0, l.H / 2, 0];
+  return (
+    <div className="scene-wrap" ref={wrap}>
       <Canvas
-        shadows={!props.lowGfx}
-        dpr={props.lowGfx ? 1 : [1, 2]}
-        camera={{ position: [62, H * 0.85, 44], fov: 38, near: 1, far: 500 }}
+        shadows={quality === 'high'}
+        dpr={quality === 'low' ? 1 : [1, 1.75]}
+        camera={{ position: [60, 46, 66], fov: 32, near: 0.5, far: 900 }}
+        gl={{ antialias: quality === 'low', powerPreference: 'high-performance', toneMapping: THREE.AgXToneMapping, toneMappingExposure: 1.05 }}
         onCreated={() => setReady(true)}
-        gl={{ antialias: !props.lowGfx }}
+        onPointerMissed={() => hover(null)}
       >
-        <color attach="background" args={['#0d1117']} />
-        <ambientLight intensity={0.9} />
-        <hemisphereLight args={['#cfe3ff', '#1a1f26', 0.6]} />
-        <directionalLight position={[40, 70, 50]} intensity={1.4} castShadow={!props.lowGfx} />
-        <directionalLight position={[-30, 20, -40]} intensity={0.35} />
-        <Rig {...props} />
-        <OrbitControls target={[0, H / 2, 0]} enablePan={false} minDistance={30} maxDistance={140} enableDamping />
+        <EngineProvider engine={engine}>
+          <EngineTicker />
+          <Suspense fallback={null}>
+            <Studio center={center} quality={quality} />
+            <Rig {...props} lowGfx={quality === 'low'} hovered={hovered} setHovered={hover} onPick={pick} />
+            <Post quality={quality} />
+          </Suspense>
+          <CameraRig l={l} view={view} focus={focus} autoRotate={autoRotate} controls={controls} />
+        </EngineProvider>
       </Canvas>
-      {!ready && <div className="scene-loading">Loading 3D view...</div>}
+
+      {!ready && <div className="scene-loading">Starting renderer...</div>}
+
+      <div className="viewport-bar top" role="toolbar" aria-label="Camera">
+        {VIEWS.map((v) => (
+          <button key={v.v} className={view.v === v.v ? 'on' : ''} onClick={tool(() => setView((c) => ({ v: v.v, n: c.n + 1 })))} title={`${v.label} view (${v.key})`}>{v.label}</button>
+        ))}
+        <span className="sep" />
+        <button className={autoRotate ? 'on' : ''} onClick={tool(() => setAutoRotate((x) => !x))} title="Auto-orbit (R)">Orbit</button>
+        <button onClick={tool(fullscreen)} title="Fullscreen">Full</button>
+      </div>
+      <div className="viewport-bar bottom" role="toolbar" aria-label="Scene">
+        <button className={explode ? 'on' : ''} onClick={tool(() => setExplode((x) => !x))} title="Exploded view (E)">Explode</button>
+        <button className={xray ? 'on' : ''} onClick={tool(() => setXray((x) => !x))} title="See through panels (X)">X-ray</button>
+        <button className={power ? 'on power' : 'power'} onClick={togglePower} title="Power on: fans, RGB, POST beep (P)">{power ? 'Power off' : 'Power on'}</button>
+        <button className={prefs.sound ? 'on' : ''} onClick={() => prefs.set({ sound: !prefs.sound })} title="Sound effects (M)">{prefs.sound ? 'Sound on' : 'Muted'}</button>
+        <button onClick={() => setHelp((x) => !x)} title="Shortcuts (?)">?</button>
+      </div>
+
+      {hovered && (
+        <div className={`scene-tip ${props.status?.[hovered] ?? ''}`}>
+          <b>{LABEL[hovered]}</b>
+          <span>{props.r[hovered]?.name ?? ''}</span>
+          {props.status?.[hovered] === 'error' && <em>Conflict, see the list</em>}
+          {props.status?.[hovered] === 'warn' && <em>Worth checking</em>}
+          <small>Click to focus</small>
+        </div>
+      )}
+      {help && (
+        <div className="scene-help" onClick={() => setHelp(false)}>
+          <b>Controls</b>
+          <div>Drag: orbit · Right-drag: pan · Scroll / pinch: zoom</div>
+          <div>1-6: camera views · R: auto-orbit · F: refocus</div>
+          <div>E: exploded view · X: x-ray · P: power on/off · M: mute</div>
+          <div>Click a part: fly to it and explain it</div>
+        </div>
+      )}
     </div>
   );
 }

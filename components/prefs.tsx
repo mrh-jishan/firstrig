@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
-type Prefs = { lowGfx: boolean; flat: boolean; labels: boolean };
+type Prefs = { lowGfx: boolean; flat: boolean; labels: boolean; sound: boolean };
 type Ctx = Prefs & { set: (p: Partial<Prefs>) => void };
 
-const DEFAULTS: Prefs = { lowGfx: false, flat: false, labels: true };
+const DEFAULTS: Prefs = { lowGfx: false, flat: false, labels: true, sound: true };
 const PrefsCtx = createContext<Ctx>({ ...DEFAULTS, set: () => {} });
 
 export function load<T>(key: string, fallback: T): T {

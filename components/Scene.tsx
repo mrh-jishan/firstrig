@@ -47,7 +47,6 @@ export default function Scene(props: SceneProps) {
   return (
     <div style={{ position: 'relative', height: '100%' }}>
       <PCScene {...props} lowGfx={prefs.lowGfx} showLabels={prefs.labels} />
-      <div className="scene-hint">Drag to rotate · scroll to zoom · click a part</div>
     </div>
   );
 }
