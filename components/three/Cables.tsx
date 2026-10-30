@@ -1,11 +1,10 @@
 'use client';
 
 import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Resolved } from '@/lib/catalog';
 import type { CableKey } from '@/lib/assembly';
-import { sfx } from '@/lib/sound';
 import { useEngine } from './engine';
 import type { Layout, V3 } from './layout';
 import { braidNormal, pinGrid } from './textures';
@@ -49,7 +48,7 @@ function routes(l: Layout, r: Resolved): Record<CableKey, Spec> {
   };
 }
 
-function Cable({ spec, active, animKey }: { spec: Spec; active: boolean; animKey?: string }) {
+function Cable({ name, spec, active }: { name: CableKey; spec: Spec; active: boolean }) {
   const engine = useEngine();
   const curve = useMemo(() => new THREE.CatmullRomCurve3(spec.path.map((p) => new THREE.Vector3(...p)), false, 'catmullrom', 0.35), [spec.path]);
   const geos = useMemo(() => {
@@ -74,15 +73,14 @@ function Cable({ spec, active, animKey }: { spec: Spec; active: boolean; animKey
     return [body, face, body, body, body, body];
   }, [spec.plug]);
 
-  const progress = useRef(active ? 0 : 1);
-  const fired = useRef(false);
   const meshes = useRef<(THREE.Mesh | null)[]>([]);
   const plug = useRef<THREE.Mesh>(null);
-  useEffect(() => { progress.current = active ? 0 : 1; fired.current = !active; }, [active, animKey]);
+  const root = useRef<THREE.Group>(null);
 
-  useFrame((_, dt) => {
-    if (progress.current < 1) progress.current = Math.min(1, progress.current + dt / 1.6);
-    const e = 1 - Math.pow(1 - progress.current, 2.2);
+  useFrame(() => {
+    const v = engine.rc[name];
+    if (root.current) root.current.visible = v > -0.5;
+    const e = Math.max(0.001, Math.min(1, v));
     meshes.current.forEach((m) => {
       if (!m) return;
       const g = m.geometry as THREE.BufferGeometry;
@@ -93,7 +91,6 @@ function Cable({ spec, active, animKey }: { spec: Spec; active: boolean; animKey
       const tan = curve.getTangentAt(Math.max(0.001, e));
       plug.current.position.copy(end).addScaledVector(tan, -0.3);
     }
-    if (!fired.current && progress.current >= 1) { fired.current = true; if (engine.sound) sfx.plug(); }
     // The cable being routed pulses so it stands out against a dark board.
     for (const m of mats) {
       if (active) { m.emissive.set('#2f9bff'); m.emissiveIntensity = 0.35 + Math.sin(engine.time * 4.5) * 0.25; } else m.emissiveIntensity = 0;
@@ -102,7 +99,7 @@ function Cable({ spec, active, animKey }: { spec: Spec; active: boolean; animKey
 
   const plugPos = spec.path[spec.path.length - 1];
   return (
-    <group>
+    <group ref={root}>
       {geos.map((g, i) => (
         <mesh key={i} ref={(m) => { meshes.current[i] = m; }} geometry={g} material={mats[i % mats.length]} castShadow />
       ))}
@@ -135,12 +132,12 @@ function CableGlow({ curve }: { curve: THREE.Curve<THREE.Vector3> }) {
   );
 }
 
-export function Cables({ l, r, cables, activeCables, animKey }: { l: Layout; r: Resolved; cables: CableKey[]; activeCables: CableKey[]; animKey?: string }) {
+export function Cables({ l, r, activeCables }: { l: Layout; r: Resolved; activeCables: CableKey[] }) {
   const specs = useMemo(() => routes(l, r), [l, r]);
-  const keys = [...new Set([...cables, ...activeCables])].filter((k) => k !== 'pcie' || r.gpu);
+  const keys = (['atx24', 'eps8', 'pcie', 'front', 'fans'] as CableKey[]).filter((k) => k !== 'pcie' || r.gpu);
   return (
     <group>
-      {keys.map((k) => <Cable key={k} spec={specs[k]} active={activeCables.includes(k)} animKey={animKey} />)}
+      {keys.map((k) => <Cable key={k} name={k} spec={specs[k]} active={activeCables.includes(k)} />)}
     </group>
   );
 }

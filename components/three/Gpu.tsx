@@ -1,12 +1,12 @@
 'use client';
 
 import { useFrame } from '@react-three/fiber';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Gpu as GpuPart } from '@/lib/catalog';
-import { Bx, Instances } from './Board';
+import { Bx, Instances, ScrewHead } from './Board';
 import Fan from './Fan';
-import { useEngine, useStd } from './engine';
+import { seg, useEngine, useRig, useStd } from './engine';
 import type { Layout, V3 } from './layout';
 import { rgbMaterial } from './shaders';
 import { brushedTexture, holeMeshAlpha, labelTexture, pinGrid } from './textures';
@@ -90,8 +90,34 @@ export function GraphicsCard({ l, part }: { l: Layout; part: GpuPart }) {
 
   const bracketPorts: V3[] = [[3.2, -1.2, -0.9], [6.0, -1.2, -0.9], [8.8, -1.2, -0.9], [3.2, -3.4, -0.9]];
 
+  const pose = useRef<THREE.Group>(null);
+  const screws = useRef<(THREE.Group | null)[]>([]);
+  const screwSteel = useStd({ color: '#c9ccd1', metalness: 1, roughness: 0.28 });
+  useRig((rc) => {
+    if (pose.current) {
+      const v = rc.gpu;
+      pose.current.visible = v > -0.5;
+      // Carried in level from the glass side, lined up over the slot, then pressed straight down.
+      pose.current.position.x = v < 0.5 ? 16 + (1.6 - 16) * seg(v, 0, 0.5) : 1.6 * (1 - seg(v, 0.5, 1));
+      pose.current.position.y = v < 0.5 ? (1 - seg(v, 0, 0.5)) * 4 : 0;
+    }
+    screws.current.forEach((g, i) => {
+      if (!g) return;
+      const v = Math.min(1, Math.max(0, rc.gpuScrew * 2 - i));
+      g.visible = v > 0.02;
+      g.position.z = -0.75 - (1 - v) * 1.5;
+      g.children[0].rotation.x = (1 - v) * 14;
+    });
+  });
+
   return (
-    <group>
+    <group ref={pose}>
+      {/* Bracket screws into the case slot rail */}
+      {[0, 1].map((i) => (
+        <group key={i} ref={(g) => { screws.current[i] = g; }} position={[height + 0.25, -thick / 2 + 0.6 + (i ? -1.6 : 1.2), -0.75]} rotation={[0, Math.PI / 2, 0]}>
+          <group><ScrewHead mat={screwSteel} r={0.38} /></group>
+        </group>
+      ))}
       {/* PCB + gold fingers seated in the slot */}
       <Bx p={[height / 2 + 0.2, 0, L / 2 - 0.4]} s={[height - 0.4, 0.16, L - 1.6]} m={pcbMat} />
       <Bx p={[0.45, 0, 1.4 + 4.3 + Math.min(8.9, l.bw - 6) / 2]} s={[0.8, 0.17, Math.min(8.9, l.bw - 6)]} m={fingersMat} />

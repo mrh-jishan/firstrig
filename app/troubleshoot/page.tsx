@@ -21,7 +21,7 @@ export default function Troubleshoot() {
     <main className="wrap">
       <div className="assemble">
         <div className="stage">
-          <Scene r={r} status={check?.focus ? { [check.focus]: 'focus' } : {}} cables={['atx24', 'eps8', 'pcie', 'front', 'fans']} activeCables={check?.cables} />
+          <Scene r={r} status={check?.focus ? { [check.focus]: 'focus' } : {}} activeCables={check?.cables} />
         </div>
         <div>
           <h1 style={{ fontSize: 26 }}>First boot troubleshooter</h1>

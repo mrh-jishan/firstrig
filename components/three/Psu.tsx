@@ -1,12 +1,12 @@
 'use client';
 
 import { RoundedBox } from '@react-three/drei';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Psu as PsuPart } from '@/lib/catalog';
 import { Bx } from './Board';
 import Fan from './Fan';
-import { useStd } from './engine';
+import { seg, useRig, useStd } from './engine';
 import { brushedTexture, hexMeshAlpha, labelTexture, pinGrid } from './textures';
 
 // PSU space: centred on the unit. 15 wide (x), 8.6 tall (y), 14 deep (z). Fan faces down, sockets face +z.
@@ -38,8 +38,19 @@ export function PowerSupply({ part }: { part: PsuPart }) {
   const iec = useStd({ color: '#0a0a0b', roughness: 0.5 });
   const rocker = useStd({ color: '#1d1e21', roughness: 0.4 });
 
+  const pose = useRef<THREE.Group>(null);
+  const rockerRef = useRef<THREE.Group>(null);
+  const markI = useMemo(() => new THREE.MeshBasicMaterial({ map: labelTexture([{ t: 'I   O', size: 90, color: '#e8ebef' }], { w: 256, h: 128 }), transparent: true }), []);
+  useRig((rc) => {
+    if (pose.current) {
+      pose.current.visible = rc.psu > -0.5;
+      // Slides in through the open side of the PSU bay.
+      pose.current.position.x = (1 - seg(rc.psu, 0, 1)) * 26;
+    }
+    if (rockerRef.current) rockerRef.current.rotation.y = (rc.psuSwitch - 0.5) * 0.5;
+  });
   return (
-    <group>
+    <group ref={pose}>
       <RoundedBox args={[15, 8.6, 14]} radius={0.35} smoothness={3} material={shell} castShadow receiveShadow />
       {/* Fan + grille underneath */}
       <Fan size={12} position={[0, -3.3, 0]} rotation={[Math.PI / 2, 0, 0]} frame={false} />
@@ -50,7 +61,8 @@ export function PowerSupply({ part }: { part: PsuPart }) {
       {/* Rear: honeycomb, mains socket and rocker switch */}
       <mesh position={[-2, 0, -7.02]} rotation={[0, Math.PI, 0]} material={grille}><planeGeometry args={[9, 7.4]} /></mesh>
       <Bx p={[5, 1.2, -7.05]} s={[2.6, 1.8, 0.2]} m={iec} />
-      <Bx p={[5, -1.6, -7.08]} s={[1.0, 1.4, 0.25]} m={rocker} />
+      <group ref={rockerRef} position={[5, -1.6, -7.08]}><Bx p={[0, 0, 0]} s={[1.0, 1.4, 0.25]} m={rocker} /></group>
+      <mesh position={[5, -0.5, -7.1]} rotation={[0, Math.PI, 0]} material={markI}><planeGeometry args={[1.2, 0.6]} /></mesh>
       {/* Front: modular sockets or a fixed cable exit */}
       {modular ? (
         <>

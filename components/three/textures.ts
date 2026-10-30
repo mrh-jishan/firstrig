@@ -278,3 +278,57 @@ export function floorTexture() {
     return t;
   });
 }
+
+/**
+ * Contact fields. 'socket' = LGA socket full of tiny gold spring pins (AM5 / Intel),
+ * 'pads' = flat gold pads under an LGA CPU, 'pins' = AM4 CPU underside covered in pins,
+ * 'holes' = AM4 socket, a white block of pin holes.
+ */
+export function contactField(kind: 'socket' | 'pads' | 'pins' | 'holes') {
+  return memo(`contacts:${kind}`, () => {
+    const W = 512;
+    const [c, g] = canvas(W, W);
+    const bg = kind === 'holes' ? '#ebe6d8' : kind === 'socket' ? '#1a1b1e' : '#1d5a33';
+    g.fillStyle = bg; g.fillRect(0, 0, W, W);
+    const n = kind === 'pads' ? 38 : 40;
+    const step = W / n;
+    const mid = W / 2;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const cx = x * step + step / 2, cy = y * step + step / 2;
+      // Leave the centre clear (capacitor island on CPUs, keep-out on sockets) and clip one corner (the key).
+      if (Math.abs(cx - mid) < W * 0.14 && Math.abs(cy - mid) < W * 0.14 && kind !== 'holes') continue;
+      if (x + y < 3) continue;
+      if (kind === 'holes') {
+        g.fillStyle = '#2b2a27'; g.beginPath(); g.arc(cx, cy, step * 0.18, 0, Math.PI * 2); g.fill();
+      } else if (kind === 'pads') {
+        g.fillStyle = '#d9b04c'; g.fillRect(cx - step * 0.28, cy - step * 0.28, step * 0.56, step * 0.56);
+      } else {
+        const grad = g.createRadialGradient(cx - 1, cy - 1, 0, cx, cy, step * 0.4);
+        grad.addColorStop(0, '#fff2c0'); grad.addColorStop(0.5, '#d9b04c'); grad.addColorStop(1, 'rgba(90,70,20,0.2)');
+        g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, step * 0.32, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (kind === 'pads') {
+      g.fillStyle = '#5b4a2a';
+      for (let i = 0; i < 24; i++) g.fillRect(mid - 50 + (i % 6) * 18, mid - 40 + Math.floor(i / 6) * 22, 10, 6);
+    }
+    // Gold key triangle in the clipped corner.
+    g.fillStyle = '#e8c35c';
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(46, 4); g.lineTo(4, 46); g.closePath(); g.fill();
+    const t = finish(c);
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    return t;
+  });
+}
+
+/** Thermal paste dot: grey with a glossy highlight. */
+export function pasteTexture() {
+  return memo('paste', () => {
+    const W = 128;
+    const [c, g] = canvas(W, W);
+    const grad = g.createRadialGradient(W * 0.42, W * 0.4, 2, W / 2, W / 2, W / 2);
+    grad.addColorStop(0, '#d9dbe0'); grad.addColorStop(0.6, '#9a9ea6'); grad.addColorStop(1, '#6c7078');
+    g.fillStyle = grad; g.beginPath(); g.arc(W / 2, W / 2, W / 2 - 1, 0, Math.PI * 2); g.fill();
+    return finish(c);
+  });
+}

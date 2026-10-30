@@ -18,17 +18,19 @@ const FLAT: { k: SceneKey; label: string; cls?: string }[] = [
 
 // Text-first view for phones, older machines and screen readers.
 function FlatScene(p: SceneProps) {
-  const shown = new Set(p.installed ?? FLAT.map((f) => f.k));
+  const rigKey: Partial<Record<SceneKey, keyof NonNullable<SceneProps['rig']>>> = { cpu: 'cpu', ram: 'ram', storage: 'm2', cooler: 'cooler', gpu: 'gpu', psu: 'psu' };
+  const isIn = (k: SceneKey) => (k === 'case' ? !p.hideCase : !p.rig || !rigKey[k] || p.rig[rigKey[k]!] >= 1);
+  const isMoving = (k: SceneKey) => !!p.rig && !!rigKey[k] && p.rig[rigKey[k]!] >= 0 && p.rig[rigKey[k]!] < 1;
   return (
     <div className="scene-wrap" role="group" aria-label="Build diagram">
       <div className="flat">
         {FLAT.map(({ k, label, cls }) => {
           const part = p.r[k];
-          const state = p.status?.[k] ?? (p.active === k ? 'focus' : '');
-          const off = !shown.has(k) && p.active !== k;
+          const state = p.status?.[k] ?? (isMoving(k) ? 'focus' : '');
+          const off = !isIn(k) && !isMoving(k);
           return (
             <button key={k} className={`slot ${cls ?? ''} ${state} ${off ? 'off' : ''}`} onClick={() => p.onPick?.(k)} style={{ textAlign: 'left', background: 'var(--panel)' }}>
-              <b>{label}{p.active === k ? ' (install now)' : ''}</b>
+              <b>{label}{isMoving(k) ? ' (installing)' : ''}</b>
               {part?.name ?? (k === 'gpu' ? 'Built-in graphics' : 'Not chosen')}
             </button>
           );

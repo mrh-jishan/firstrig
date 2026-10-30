@@ -7,12 +7,12 @@ import * as THREE from 'three';
 import type { Case as CasePart } from '@/lib/catalog';
 import { Bx } from './Board';
 import Fan from './Fan';
-import { useEngine, useStd } from './engine';
+import { seg, useEngine, useStd } from './engine';
 import type { Layout } from './layout';
 import { hexMeshAlpha, holeMeshAlpha, labelTexture } from './textures';
 
 // World space. The glass side faces +x, the front faces +z.
-export function PcCase({ l, part, lowGfx }: { l: Layout; part: CasePart; lowGfx?: boolean }) {
+export function PcCase({ l, part, lowGfx, gpuSlots = 2 }: { l: Layout; part: CasePart; lowGfx?: boolean; gpuSlots?: number }) {
   const engine = useEngine();
   const { D, H, W } = l;
   const white = part.color === '#e9eaec';
@@ -47,17 +47,36 @@ export function PcCase({ l, part, lowGfx }: { l: Layout; part: CasePart; lowGfx?
   const glassRef = useRef<THREE.Group>(null);
   const shroudSide = useRef<THREE.MeshStandardMaterial>(null);
   const trayMat = useRef<THREE.MeshStandardMaterial>(null);
+  const coverRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const shieldRef = useRef<THREE.Group>(null);
   useFrame(() => {
-    const k = engine.explode;
+    const rc = engine.rc;
+    const off = Math.max(engine.explode, 1 - rc.glass);
     if (glassRef.current) {
-      glassRef.current.position.x = k * 34;
-      glassRef.current.visible = engine.xray < 0.98;
+      glassRef.current.position.x = off * 34;
+      glassRef.current.visible = engine.xray < 0.98 && rc.glass > 0.02;
     }
     glass.opacity = 0.22 * (1 - engine.xray);
     // While cables are being routed the tray turns see-through so you can follow them behind it.
     if (trayMat.current) trayMat.current.opacity = 1 - engine.cableView * 0.75;
-    if (shroudSide.current) { shroudSide.current.opacity = 1 - engine.xray; shroudSide.current.visible = engine.xray < 0.98; }
+    // With the glass off for building, the shroud side goes see-through so the PSU stays visible.
+    const shroudFade = Math.max(engine.xray, (1 - rc.glass) * 0.8);
+    if (shroudSide.current) { shroudSide.current.opacity = 1 - shroudFade; shroudSide.current.visible = shroudFade < 0.98; }
+    coverRefs.current.forEach((m, i) => {
+      if (!m || i >= gpuSlots) return;
+      m.position.z = -D / 2 - 0.09 - rc.slotCovers * 5;
+      m.position.x = l.x0 + 6.4 + rc.slotCovers * 3;
+      m.visible = rc.slotCovers < 0.97;
+    });
+    if (shieldRef.current) {
+      const v = rc.ioShield;
+      shieldRef.current.visible = v > -0.5;
+      shieldRef.current.position.set(l.x0 + 1.5 + (1 - seg(v, 0, 1)) * 8, l.top - 6.6, -D / 2 + 0.35 + (1 - seg(v, 0, 1)) * 10);
+    }
   });
+  const brass = useStd({ color: '#c9a24a', metalness: 1, roughness: 0.3 });
+  const shieldMat = useStd({ color: '#9aa1aa', metalness: 1, roughness: 0.3 });
+  const portMat = useStd({ color: '#0b0c0e', roughness: 0.6 });
 
   const frontFans = part.size === 'small' ? [] : part.id === 'q300l' ? [] : (part.id === 'pop-air' ? [0.3, 0.55, 0.8] : [0.38, 0.68]);
   const rgbFans = part.id === 'pop-air';
@@ -106,10 +125,21 @@ export function PcCase({ l, part, lowGfx }: { l: Layout; part: CasePart; lowGfx?
       {/* Rear: exhaust fan, I/O opening, slot covers */}
       <Fan size={12} position={[l.x0 + 7.5, ioTop - 6.8, -D / 2 + 1.4]} rotation={[0, Math.PI, 0]} rgb={rgbFans} spinOffset={4} bladeColor={fanBlade} frameColor={fanFrame} />
       {Array.from({ length: slotCount }, (_, i) => (
-        <mesh key={i} position={[l.x0 + 6.4, l.top - l.pcieDv - 1.4 - i * 2.03, -D / 2 - 0.09]} rotation={[0, Math.PI, 0]} material={slotMat}>
+        <mesh key={i} ref={(m) => { coverRefs.current[i] = m; }} position={[l.x0 + 6.4, l.top - l.pcieDv - 1.4 - i * 2.03, -D / 2 - 0.09]} rotation={[0, Math.PI, 0]} material={slotMat}>
           <planeGeometry args={[11.2, 1.6]} />
         </mesh>
       ))}
+      {/* Brass standoffs under every mounting hole */}
+      {l.holes.map(([du, dv], i) => (
+        <mesh key={i} position={[l.x0 - 0.35, l.top - dv, l.rear + du]} rotation={[0, 0, Math.PI / 2]} material={brass}>
+          <cylinderGeometry args={[0.28, 0.28, 0.6, 6]} />
+        </mesh>
+      ))}
+      {/* Rear I/O shield */}
+      <group ref={shieldRef}>
+        <Bx p={[0, 0, 0]} s={[3.2, 12, 0.08]} m={shieldMat} />
+        {[-4, -2, 0, 2, 4].map((y) => <Bx key={y} p={[0, y, -0.03]} s={[1.6, 0.8, 0.06]} m={portMat} shadow={false} />)}
+      </group>
       {/* PSU shroud */}
       {shroudH > 0 && (
         <group>

@@ -63,7 +63,7 @@ export default function BuildPage() {
             <h1 className="grow" style={{ fontSize: 24, margin: 0 }}>Your build</h1>
             <span className={`chip ${errors ? 'error' : 'ok'}`}>{errors ? `${errors} problem${errors > 1 ? 's' : ''} to fix` : 'Everything fits'}</span>
           </div>
-          <div className="scene-host"><Scene r={r} status={status} onPick={pick} cables={['atx24', 'eps8', 'pcie']} /></div>
+          <div className="scene-host"><Scene r={r} status={status} onPick={pick} /></div>
           <div className="row">
             <Link className={`btn primary grow ${errors ? 'disabled' : ''}`} href={buildHref('/assemble', build, owned)} aria-disabled={errors > 0}
               onClick={(e) => { if (errors) e.preventDefault(); }} style={{ justifyContent: 'center', opacity: errors ? 0.5 : 1 }}>

@@ -2,24 +2,83 @@
 
 import { RoundedBox } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Cooler as CoolerPart } from '@/lib/catalog';
-import { Bx, Instances } from './Board';
+import { Bx, Instances, ScrewHead } from './Board';
 import Fan from './Fan';
-import { useEngine, useStd, usePhys } from './engine';
+import { seg, useEngine, useRig, useStd, usePhys } from './engine';
 import type { Layout, V3 } from './layout';
 import { infinityMirrorMaterial } from './shaders';
-import { braidNormal, brushedTexture, finStripes, labelTexture } from './textures';
+import { braidNormal, brushedTexture, finStripes, labelTexture, pasteTexture } from './textures';
 
 // Socket space: origin at the CPU socket centre on the board surface, +x out of the board, +z toward the front.
 export function CpuCooler({ l, part }: { l: Layout; part: CoolerPart }) {
   const at = l.P(l.sock.du, l.sock.dv, 0);
+  const pose = useRef<THREE.Group>(null);
+  const film = useRef<THREE.Group>(null);
+  const paste = useRef<THREE.Mesh>(null);
+  const bracket = useRef<THREE.Group>(null);
+  const screws = useRef<(THREE.Group | null)[]>([]);
+  const steel = useStd({ color: '#c9ccd1', metalness: 1, roughness: 0.28 });
+  const filmMat = useStd({ color: '#bfe3ff', roughness: 0.08, transparent: true, opacity: 0.5, metalness: 0 });
+  const tabMat = useStd({ color: '#4aa3ff', roughness: 0.4 });
+  const pasteMat = useStd({ map: pasteTexture(), roughness: 0.25, metalness: 0.3 });
+  const tower = part.kind === 'air';
+  // Screw positions in socket space, in tightening order (an X pattern for four).
+  const screwPts: V3[] = tower ? [[2.6, 0, -3.6], [2.6, 0, 3.6]]
+    : part.kind === 'stock' ? [[4.3, 3.7, -3.7], [4.3, -3.7, 3.7], [4.3, 3.7, 3.7], [4.3, -3.7, -3.7]]
+    : [[4.8, 3.0, -3.0], [4.8, -3.0, 3.0], [4.8, 3.0, 3.0], [4.8, -3.0, -3.0]];
+  useRig((rc) => {
+    if (pose.current) {
+      const v = rc.cooler;
+      pose.current.visible = v > -0.5;
+      pose.current.position.x = (1 - seg(v, 0, 1)) * 16;
+    }
+    if (film.current) {
+      film.current.visible = rc.coolerFilm > 0.04;
+      const peel = 1 - rc.coolerFilm;
+      film.current.position.set(-peel * 1.5, peel * 5, peel * 6);
+      film.current.rotation.x = -peel * 1.2;
+    }
+    if (paste.current) {
+      paste.current.visible = rc.paste > 0.03;
+      paste.current.scale.setScalar(0.2 + rc.paste * 0.8);
+    }
+    if (bracket.current) {
+      bracket.current.visible = rc.bracket > 0.03;
+      bracket.current.position.x = (1 - rc.bracket) * 6;
+    }
+    const n = screwPts.length;
+    screws.current.forEach((g, i) => {
+      if (!g) return;
+      const v = Math.min(1, Math.max(0, rc.coolerScrew * n - i));
+      g.position.x = screwPts[i][0] + (1 - v) * 1.2;
+      g.rotation.x = (1 - v) * 16;
+    });
+  });
   return (
     <group position={at}>
-      {part.kind === 'stock' && <StockCooler />}
-      {part.kind === 'air' && <TowerCooler part={part} />}
-      {part.kind === 'aio' && <Aio l={l} part={part} />}
+      {/* Thermal paste dot sits on the CPU lid */}
+      <mesh ref={paste} position={[0.87, 0, 0]} rotation={[0, Math.PI / 2, 0]} material={pasteMat}><circleGeometry args={[0.45, 32]} /></mesh>
+      {part.kind !== 'stock' && (
+        <group ref={bracket}>
+          {[-3.9, 3.9].map((y) => <Bx key={y} p={[0.9, y, 0]} s={[0.3, 0.9, 9.6]} m={steel} />)}
+        </group>
+      )}
+      <group ref={pose}>
+        {part.kind === 'stock' && <StockCooler />}
+        {part.kind === 'air' && <TowerCooler part={part} />}
+        {part.kind === 'aio' && <Aio l={l} part={part} />}
+        {/* Protective film with a pull tab on the cold plate */}
+        <group ref={film}>
+          <Bx p={[0.78, 0, 0]} s={[0.02, 4.4, 4.4]} m={filmMat} shadow={false} />
+          <Bx p={[0.78, 2.6, 1.9]} s={[0.02, 1.0, 0.7]} m={tabMat} shadow={false} />
+        </group>
+        {screwPts.map((p, i) => (
+          <group key={i} ref={(g) => { screws.current[i] = g; }} position={p}><ScrewHead mat={steel} r={0.32} /></group>
+        ))}
+      </group>
     </group>
   );
 }
